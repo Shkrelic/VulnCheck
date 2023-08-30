@@ -18,6 +18,25 @@ CVE="$2"
 # Temporary file to hold the pssh.sh results
 TMP_RESULT=$(mktemp)
 
+# Parse function as per your earlier details
+parse_results() {
+    local output="$1"
+    local host="$2"
+    local cve="$3"
+
+    # Check if the output contains the relevant details
+    if echo "$output" | grep -q "$cve"; then
+        local update_id=$(echo "$output" | grep 'Update ID' | awk '{print $3}')
+        local issued_date=$(echo "$output" | grep 'Issued' | awk '{print $3" "$4}')
+        local title=$(echo "$output" | grep -E 'Important:|Moderate:|Critical:' | cut -d ":" -f 2-)
+        echo -e "$host: ${RED}Vulnerable${NC} - $update_id - $issued_date - $title"
+    elif echo "$output" | grep -q "No matches found"; then
+        echo -e "$host: ${GREEN}Safe${NC}"
+    else
+        echo -e "$host: ${YELLOW}Unknown${NC} - $(echo "$output")"
+    fi
+}
+
 echo "Step 1: Starting parallel SSH to gather data from all hosts..."
 
 # Execute the parallel ssh and put the result in the temporary file
@@ -43,22 +62,3 @@ done < "$HOST_FILE"
 
 # Cleaning up the temp file
 rm -f "$TMP_RESULT"
-
-# Parse function as per your earlier details
-parse_results() {
-    local output="$1"
-    local host="$2"
-    local cve="$3"
-
-    # Check if the output contains the relevant details
-    if echo "$output" | grep -q "$cve"; then
-        local update_id=$(echo "$output" | grep 'Update ID' | awk '{print $3}')
-        local issued_date=$(echo "$output" | grep 'Issued' | awk '{print $3" "$4}')
-        local title=$(echo "$output" | grep -E 'Important:|Moderate:|Critical:' | cut -d ":" -f 2-)
-        echo -e "$host: ${RED}Vulnerable${NC} - $update_id - $issued_date - $title"
-    elif echo "$output" | grep -q "No matches found"; then
-        echo -e "$host: ${GREEN}Safe${NC}"
-    else
-        echo -e "$host: ${YELLOW}Unknown${NC} - $(echo "$output")"
-    fi
-}
