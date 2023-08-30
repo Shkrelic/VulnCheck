@@ -17,17 +17,24 @@ fi
 host_file="$1"
 cve_number="$2"
 
-# Connection verification
-while IFS= read -r host; do
-    output=$(pssh.sh -h $host "echo connected")
+# Connection Verification
+echo "Testing connections to hosts..."
+temp_file=$(mktemp)
 
-    if echo "$output" | grep -q "connected"; then
-        echo -e "${GREEN}${host} is reachable.${NC}"
+# Run pssh.sh in parallel and save output to a temp file
+pssh.sh -h "$host_file" "echo ${HOSTNAME} is up" > "$temp_file"
+
+while read -r host; do
+    if grep -q "$host is up" "$temp_file"; then
+        echo -e "${GREEN}${host} is reachable.${RESET}"
     else
-        echo -e "${RED}${host} - CONNECTION ERROR${NC}"
+        echo -e "${RED}${host} - CONNECTION ERROR${RESET}"
+        # Optionally, you can print the exact error from pssh.sh like this:
+        # echo -e "${RED}$(grep "$host" "$temp_file")${RESET}"
     fi
 done < "$host_file"
 
+rm "$temp_file"  # Clean up the temp file
 # Fetch CVE Information from API via the API_SERVER
 API_RESPONSE=$(pssh.sh -h $API_SERVER "curl -s '${API_HOST}/cve.json?cve=${cve_number}'")
 
