@@ -16,15 +16,22 @@ host_file=$1
 advisory=$2
 
 # Connection verification
-while IFS= read -r host; do
-    output=$(pssh.sh -h $host "echo connected")
-    
-    if echo "$output" | grep -q "connected"; then
+
+output_file="/tmp/pssh_output_$(date +%s)"
+pssh.sh -h $host_file "echo connected" > $output_file
+
+while IFS= read -r line; do
+    host=$(echo "$line" | cut -d' ' -f1)
+    message=$(echo "$line" | cut -d' ' -f2-)
+
+    if echo "$message" | grep -q "connected"; then
         echo -e "${GREEN}${host} is reachable.${NC}"
     else
         echo -e "${RED}${host} - CONNECTION ERROR${NC}"
     fi
-done < "$host_file"
+done < $output_file
+
+rm -f $output_file
 
 # API interaction via another server
 SERVER_TO_MAKE_API_CALL="your.server.name"
