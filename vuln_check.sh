@@ -1,16 +1,50 @@
 #!/bin/bash
 
-HOST_FILE="$1"
-CVE_FILE="$2"
-TMP_RESULT=$(mktemp)
-
+# Colors for pretty output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-declare -a PROCESSED_HOSTS
+# Check if host file and CVE are provided
+if [[ -z "$1" || -z "$2" ]]; then
+    echo "Usage: $0 <host_file> <cve>"
+    exit 1
+fi
 
+HOST_FILE="$1"
+CVE="$2"
+
+# Temporary file to hold the pssh.sh results
+TMP_RESULT=$(mktemp)
+
+echo "Step 1: Starting parallel SSH to gather data from all hosts..."
+
+# Execute the parallel ssh and put the result in the temporary file
+~/bin/pssh.sh -h "$HOST_FILE" -q sh -c "yum updateinfo info --cve $CVE 2>/dev/null" > "$TMP_RESULT" &
+
+PSSH_PID=$!
+
+echo "Gathering data in the background..."
+wait $PSSH_PID
+
+echo "Step 2: Data gathering complete. Stored in a temporary location."
+
+echo "Step 3: Beginning to parse the data..."
+
+# Parse the results based on the host file
+while IFS= read -r host; do
+    # Extracting host-specific output
+    host_output=$(awk "/^$host:/,/^$/" "$TMP_RESULT")
+
+    # Parse results for the specific host
+    parse_results "$host_output" "$host" "$CVE"
+done < "$HOST_FILE"
+
+# Cleaning up the temp file
+rm -f "$TMP_RESULT"
+
+# Parse function as per your earlier details
 parse_results() {
     local output="$1"
     local host="$2"
@@ -18,25 +52,13 @@ parse_results() {
 
     # Check if the output contains the relevant details
     if echo "$output" | grep -q "$cve"; then
-        echo -e "$host: ${RED}Vulnerable${NC} - $(echo "$output" | grep 'Update ID' | awk '{print $3}') - $(echo "$output" | grep 'Issued' | awk '{print $3" "$4}') - $(echo "$output" | grep -E 'Important:|Moderate:|Critical:' | cut -d ":" -f 2-)"
+        local update_id=$(echo "$output" | grep 'Update ID' | awk '{print $3}')
+        local issued_date=$(echo "$output" | grep 'Issued' | awk '{print $3" "$4}')
+        local title=$(echo "$output" | grep -E 'Important:|Moderate:|Critical:' | cut -d ":" -f 2-)
+        echo -e "$host: ${RED}Vulnerable${NC} - $update_id - $issued_date - $title"
     elif echo "$output" | grep -q "No matches found"; then
         echo -e "$host: ${GREEN}Safe${NC}"
     else
         echo -e "$host: ${YELLOW}Unknown${NC} - $(echo "$output")"
     fi
 }
-
-while read -r host; do
-    if [[ " ${PROCESSED_HOSTS[@]} " =~ " ${host} " ]]; then
-        continue
-    fi
-    PROCESSED_HOSTS+=("$host")
-
-    while read -r cve; do
-        result=$(~/bin/pssh.sh -h $host -q sh -c "yum updateinfo info --cve $cve 2>/dev/null")
-        clean_output=$(echo "$result" | sed -n '/^$/,/Loaded plugins:/p')
-        parse_results "$clean_output" "$host" "$cve"
-    done < "$CVE_FILE"
-done < "$HOST_FILE"
-
-rm "$TMP_RESULT"
