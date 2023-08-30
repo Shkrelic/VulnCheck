@@ -15,14 +15,13 @@ validate_inputs() {
 }
 
 # Step 2: Connection Verification
-# Step 2: Connection Verification
 verify_connection() {
     local hosts_file="$1"
     local responsive_hosts=()
 
     while IFS= read -r host; do
-        # Using /dev/tcp to check if port 22 (SSH) is open
-        if (echo > "/dev/tcp/$host/22") 2>/dev/null; then
+        # Using timeout and bash to check if port 22 (SSH) is open
+        if timeout 5 bash -c "echo > /dev/tcp/$host/22" 2>/dev/null; then
             responsive_hosts+=("$host")
         else
             echo -e "${host} - ${RED}CONNECTION ERROR${RESET}"
