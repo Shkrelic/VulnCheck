@@ -1,56 +1,39 @@
 #!/bin/bash
 
-# Colors for output
+# Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
 RESET='\033[0m'
 
 # Step 1: Input Validation
-validate_inputs() {
-    if [ -z "$1" ] || [ -z "$2" ]; then
-        echo -e "${RED}Both arguments must be defined.${RESET}"
-        exit 1
-    fi
-}
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo -e "${RED}Both arguments \$1 and \$2 must be defined.${RESET}"
+    exit 1
+fi
 
 # Step 2: Connection Verification
 verify_connection() {
     local hosts_file="$1"
     local responsive_hosts=()
 
-    while IFS= read -r host; do
-        # Using timeout and bash to check if port 22 (SSH) is open
-        if timeout 5 bash -c "echo > /dev/tcp/$host/22" 2>/dev/null; then
-            responsive_hosts+=("$host")
+    # Using pssh.sh to check connection by simply echoing "test"
+    # We're assuming that any non-responding host will throw an error containing the phrase "Could not resolve" (this may need adjustment based on actual error messages you see)
+    results=$(/bin/pssh.sh -f "$hosts_file" -o '|grep "Could not resolve"' echo "test")
+
+    # Process the results to filter out non-responsive hosts
+    while IFS= read -r line; do
+        if [[ $line == *"Could not resolve"* ]]; then
+            host=$(echo $line | cut -d':' -f1)  # Extracting the hostname from the error message
+            echo -e "${RED}${host} - CONNECTION ERROR${RESET}"
         else
-            echo -e "${host} - ${RED}CONNECTION ERROR${RESET}"
+            responsive_hosts+=("$host")
         fi
-    done < "$hosts_file"
+    done <<< "$results"
 
     echo "${responsive_hosts[@]}"
 }
 
-# Step 3: Gather CVE Information
-gather_cve_info_from_redhat() {
-    local endpoint="/cvrf.json"
-    local params="package=kernel"
-    local full_url="https://access.redhat.com/hydra/rest/securitydata${endpoint}?${params}"
+# Later, when calling this function
+responsive_hosts=( $(verify_connection "$1") )
 
-    curl -s "$full_url" | jq -r '.[] | "\(.RHSA) - \(.severity)"'
-}
-
-main() {
-    echo -e "${BLUE}==> Validating Inputs${RESET}"
-    validate_inputs "$1" "$2"
-
-    echo -e "${BLUE}==> Verifying Connection to Hosts${RESET}"
-    local responsive_hosts
-    responsive_hosts=$(verify_connection "$1")
-    echo -e "Responsive Hosts: ${GREEN}${responsive_hosts}${RESET}"
-
-    echo -e "${BLUE}==> Gathering CVE Information from Red Hat${RESET}"
-    gather_cve_info_from_redhat
-}
-
-main "$1" "$2"
+# You can then use $responsive_hosts for subsequent steps in the script.
