@@ -17,18 +17,21 @@ verify_connection() {
     local responsive_hosts=()
 
     # Using pssh.sh to check connection by simply echoing "test"
-    # We're assuming that any non-responding host will throw an error containing the phrase "Could not resolve" (this may need adjustment based on actual error messages you see)
-    results=$(/bin/pssh.sh -f "$hosts_file" -o '|grep "Could not resolve"' echo "test")
+    # I'm going to redirect errors to a temporary file for processing.
+    temp_file=$(mktemp)
+    /bin/pssh.sh -f "$hosts_file" echo "test" 2> $temp_file
 
     # Process the results to filter out non-responsive hosts
     while IFS= read -r line; do
         if [[ $line == *"Could not resolve"* ]]; then
-            host=$(echo $line | cut -d':' -f1)  # Extracting the hostname from the error message
+            host=$(echo $line | cut -d' ' -f1)  # Extracting the hostname from the error message
             echo -e "${RED}${host} - CONNECTION ERROR${RESET}"
         else
             responsive_hosts+=("$host")
         fi
-    done <<< "$results"
+    done < $temp_file
+
+    rm $temp_file
 
     echo "${responsive_hosts[@]}"
 }
