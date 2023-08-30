@@ -19,7 +19,7 @@ verify_connection() {
     # Using pssh.sh to check connection by simply echoing "test"
     # I'm going to redirect errors to a temporary file for processing.
     temp_file=$(mktemp)
-    /bin/pssh.sh -f "$hosts_file" echo "test" 2> $temp_file
+    ~/bin/pssh.sh -f "$hosts_file" echo "test" 2> $temp_file
 
     # Process the results to filter out non-responsive hosts
     while IFS= read -r line; do
