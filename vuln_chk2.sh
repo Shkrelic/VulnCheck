@@ -17,20 +17,16 @@ fi
 host_file="$1"
 cve_number="$2"
 
-# Connection Verification
-echo "Testing connections to hosts..."
+# Connection verification
+while IFS= read -r host; do
+    output=$(pssh.sh -h $host "echo connected")
 
-# Using pssh.sh with the -f flag to check connections in parallel
-pssh.sh -f $host_file "echo 1" | while read -r line; do
-    host=$(echo "$line" | cut -d ':' -f 1)
-    result=$(echo "$line" | cut -d ':' -f 2)
-
-    if [[ $result =~ "1" ]]; then
-        echo -e "${GREEN}${host} is reachable.${RESET}"
+    if echo "$output" | grep -q "connected"; then
+        echo -e "${GREEN}${host} is reachable.${NC}"
     else
-        echo -e "${RED}${host} - CONNECTION ERROR${RESET}"
+        echo -e "${RED}${host} - CONNECTION ERROR${NC}"
     fi
-done
+done < "$host_file"
 
 # Fetch CVE Information from API via the API_SERVER
 API_RESPONSE=$(pssh.sh -h $API_SERVER "curl -s '${API_HOST}/cve.json?cve=${cve_number}'")
