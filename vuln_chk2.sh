@@ -17,11 +17,12 @@ advisory=$2
 
 # Connection verification
 while IFS= read -r host; do
-    pssh.sh -h $host "echo connected" &> /dev/null
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}${host} - CONNECTION ERROR${NC}"
-    else
+    output=$(pssh.sh -h $host "echo connected")
+    
+    if echo "$output" | grep -q "connected"; then
         echo -e "${GREEN}${host} is reachable.${NC}"
+    else
+        echo -e "${RED}${host} - CONNECTION ERROR${NC}"
     fi
 done < "$host_file"
 
