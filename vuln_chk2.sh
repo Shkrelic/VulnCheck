@@ -16,22 +16,21 @@ verify_connection() {
     local hosts_file="$1"
     local responsive_hosts=()
 
-    # Using pssh.sh to check connection by simply echoing "test"
-    # I'm going to redirect errors to a temporary file for processing.
-    temp_file=$(mktemp)
-    ~/bin/pssh.sh -f "$hosts_file" echo "test" 2> $temp_file
+    # Unique string for connection test
+    unique_string="CONNECTION_SUCCESS_12345"
 
-    # Process the results to filter out non-responsive hosts
+    # Using pssh.sh to check connection by echoing the unique string
+    results=$(~/bin/pssh.sh -f "$hosts_file" echo "$unique_string")
+
+    # Process results and categorize hosts as responsive or unresponsive
     while IFS= read -r line; do
-        if [[ $line == *"Could not resolve"* ]]; then
-            host=$(echo $line | cut -d' ' -f1)  # Extracting the hostname from the error message
-            echo -e "${RED}${host} - CONNECTION ERROR${RESET}"
-        else
+        host=$(echo $line | cut -d' ' -f1)  # Extracting the hostname
+        if [[ $line == *"$unique_string"* ]]; then
             responsive_hosts+=("$host")
+        else
+            echo -e "${RED}${host} - CONNECTION ERROR${RESET}"
         fi
-    done < $temp_file
-
-    rm $temp_file
+    done <<< "$results"
 
     echo "${responsive_hosts[@]}"
 }
