@@ -1,43 +1,49 @@
 #!/bin/bash
 
 # Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+RED="\e[31m"
+GREEN="\e[32m"
+RESET="\e[0m"
 
-# Input validation
-if [ -z "$1" ] || [ -z "$2" ]; then
-    echo -e "${RED}Error: Please provide both arguments.${NC}"
-    echo "Usage: $0 <hosts_file> <advisory>"
+API_HOST="https://access.redhat.com/hydra/rest/securitydata"
+API_SERVER="YOUR_API_SERVER_HOSTNAME"  # Set this to your server's hostname
+
+# Check inputs
+if [[ -z "$1" || -z "$2" ]]; then
+    echo -e "${RED}Usage: $0 <hosts_file> <CVE_number>${RESET}"
     exit 1
 fi
 
-host_file=$1
-advisory=$2
+host_file="$1"
+cve_number="$2"
 
-# Connection verification
+# Connection Verification
+echo "Testing connections to hosts..."
 
-output_file="/tmp/pssh_output_$(date +%s)"
-pssh.sh -h $host_file "echo connected" > $output_file
+# Using pssh.sh with the -f flag to check connections in parallel
+pssh.sh -f $host_file "echo 1" | while read -r line; do
+    host=$(echo "$line" | cut -d ':' -f 1)
+    result=$(echo "$line" | cut -d ':' -f 2)
 
-while IFS= read -r line; do
-    host=$(echo "$line" | cut -d' ' -f1)
-    message=$(echo "$line" | cut -d' ' -f2-)
-
-    if echo "$message" | grep -q "connected"; then
-        echo -e "${GREEN}${host} is reachable.${NC}"
+    if [[ $result =~ "1" ]]; then
+        echo -e "${GREEN}${host} is reachable.${RESET}"
     else
-        echo -e "${RED}${host} - CONNECTION ERROR${NC}"
+        echo -e "${RED}${host} - CONNECTION ERROR${RESET}"
     fi
-done < $output_file
+done
 
-rm -f $output_file
+# Fetch CVE Information from API via the API_SERVER
+API_RESPONSE=$(pssh.sh -h $API_SERVER "curl -s '${API_HOST}/cve.json?cve=${cve_number}'")
 
-# API interaction via another server
-SERVER_TO_MAKE_API_CALL="your.server.name"
-data=$(pssh.sh -h "$SERVER_TO_MAKE_API_CALL" "curl -s 'https://access.redhat.com/hydra/rest/securitydata/cve.json?advisory=$advisory'")
-cve_data=$(echo "$data" | jq '.[] | "\(.CVE) - \(.severity)"')
+# Use Python to parse API response
+python3 - <<END
+import json
 
-echo -e "${GREEN}CVE Details from Server:${NC} $cve_data"
+data = json.loads('''$API_RESPONSE''')
 
-# Continue with other tasks...
+for cve in data:
+    print(f"{cve['CVE']} - CVE Severity: {cve['severity']} - Title: {cve['document_title']}")
+
+END
+
+# Continue with the rest of the script...
