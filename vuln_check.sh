@@ -63,4 +63,19 @@ done < "$HOST_FILE"
 # Cleaning up the temp file
 rm -f "$TMP_RESULT"
 
-pssh.sh -f hosts.txt sh -c 'echo ":; $(uptime | awk -F" " "{print $2, $3}"); :$(yum -q updateinfo list security 2> /dev/null | grep RHSA | wc -l)"'
+
+
+
+
+#!/bin/bash
+
+HostOutput="Host::; Uptime:; Pending Security Updates\n"
+
+# Get the uptime and number of pending security updates for each host
+HostOutput=$HostOutput$(pssh.sh -f hosts.txt sh -c 'echo ":; $(uptime | awk -F" " "{print $2, $3}"); :$(yum -q updateinfo list security 2> /dev/null | grep RHSA | wc -l)"')
+
+# Echo the output to the column command
+echo -e "$HostOutput" | column -t -s":"
+
+# Unset the HostOutput variable
+unset HostOutput
