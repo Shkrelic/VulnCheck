@@ -1,14 +1,30 @@
 #!/bin/bash
 
-# Run yum check-update and capture errors
-errors=$(yum check-update 2>&1 >/dev/null)
+# Removing all subscriptions
+sudo subscription-manager remove --all
 
-# Check if there are any errors
-if [[ -n "$errors" ]]; then
-    # Print hostname
-    echo "Hostname: $(hostname)"
-    # Print kernel version
-    echo "Kernel Version: $(uname -r)"
-    # Print subscription-manager identity
-    echo "Subscription Manager Identity: $(sudo subscription-manager identity)"
-fi
+# Unregistering the system
+sudo subscription-manager unregister
+
+# Cleaning up subscription-manager data
+sudo subscription-manager clean
+
+# Registering the system with specified parameters
+sudo subscription-manager register --name="$(hostname -f)" --org="PLACEHOLDER" --activationkey="PLACEHOLDER" --force
+
+# Refreshing subscription-manager
+sudo subscription-manager refresh
+
+# Enabling specified repository
+sudo subscription-manager repos --enable="PLACEHOLDER"
+
+# Refreshing subscription-manager again
+sudo subscription-manager refresh
+
+# Cleaning up yum data
+sudo yum clean all
+
+# Checking for updates with yum
+sudo yum check-update
+
+# Note: Replace "PLACEHOLDER" with your actual values for organization, activation key, and repository.
