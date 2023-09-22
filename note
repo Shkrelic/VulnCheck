@@ -1,11 +1,14 @@
 #!/bin/bash
 
-# Check the current host repo status
-yum check-update &> /dev/null
+# Run yum check-update and capture errors
+errors=$(yum check-update 2>&1 >/dev/null)
 
-# If there are errors, print the hostname, kernel version, and subscription-manager identity
-if [ $? -ne 0 ]; then
-  echo "Server: $HOSTNAME"
-  echo "Uname -r: $(uname -r)"
-  echo "Subscription-manager identity: $(subscription-manager identity)"
+# Check if there are any errors
+if [[ -n "$errors" ]]; then
+    # Print hostname
+    echo "Hostname: $(hostname)"
+    # Print kernel version
+    echo "Kernel Version: $(uname -r)"
+    # Print subscription-manager identity
+    echo "Subscription Manager Identity: $(sudo subscription-manager identity)"
 fi
