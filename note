@@ -9,28 +9,19 @@ execute_command() {
     eval $1 >> "$output_file" 2>&1
 }
 
-# List of commands to execute
-commands=(
-    "sudo subscription-manager remove --all"
-    "sudo subscription-manager unregister"
-    "sudo subscription-manager clean"
-    "sudo subscription-manager register --name=\"$(hostname -f)\" --org=\"PLACEHOLDER\" --activationkey=\"PLACEHOLDER\" --force"
-    "sudo subscription-manager refresh"
-    "sudo subscription-manager repos --enable=\"PLACEHOLDER\""
-    "sudo subscription-manager refresh"
-    "sudo yum clean all"
-    "sudo yum check-update"
-)
-
-# Execute each command in sequence
-for cmd in "${commands[@]}"; do
-    execute_command "$cmd"
-done
+# Execute each command
+execute_command "sudo subscription-manager remove --all"
+execute_command "sudo subscription-manager unregister"
+execute_command "sudo subscription-manager clean"
+execute_command "sudo subscription-manager register --name=\"$(hostname -f)\" --org=\"PLACEHOLDER\" --activationkey=\"PLACEHOLDER\" --force"
+execute_command "sudo subscription-manager refresh"
+execute_command "sudo subscription-manager repos --enable=\"PLACEHOLDER\""
+execute_command "sudo subscription-manager refresh"
+execute_command "sudo yum clean all"
+execute_command "sudo yum check-update"
 
 # Display the captured output
 cat "$output_file"
 
 # Clean up by removing the temporary file
 rm "$output_file"
-
-# Note: Replace "PLACEHOLDER" with your actual values for organization, activation key, and repository.
