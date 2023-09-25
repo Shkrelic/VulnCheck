@@ -1,30 +1,36 @@
 #!/bin/bash
 
-# Removing all subscriptions
-sudo subscription-manager remove --all
+# Create a temporary file to capture output
+output_file=$(mktemp)
 
-# Unregistering the system
-sudo subscription-manager unregister
+# Function to execute a command and capture its output
+execute_command() {
+    echo -e "\nCommand: $1" >> "$output_file"
+    eval $1 >> "$output_file" 2>&1
+}
 
-# Cleaning up subscription-manager data
-sudo subscription-manager clean
+# List of commands to execute
+commands=(
+    "sudo subscription-manager remove --all"
+    "sudo subscription-manager unregister"
+    "sudo subscription-manager clean"
+    "sudo subscription-manager register --name=\"$(hostname -f)\" --org=\"PLACEHOLDER\" --activationkey=\"PLACEHOLDER\" --force"
+    "sudo subscription-manager refresh"
+    "sudo subscription-manager repos --enable=\"PLACEHOLDER\""
+    "sudo subscription-manager refresh"
+    "sudo yum clean all"
+    "sudo yum check-update"
+)
 
-# Registering the system with specified parameters
-sudo subscription-manager register --name="$(hostname -f)" --org="PLACEHOLDER" --activationkey="PLACEHOLDER" --force
+# Execute each command in sequence
+for cmd in "${commands[@]}"; do
+    execute_command "$cmd"
+done
 
-# Refreshing subscription-manager
-sudo subscription-manager refresh
+# Display the captured output
+cat "$output_file"
 
-# Enabling specified repository
-sudo subscription-manager repos --enable="PLACEHOLDER"
-
-# Refreshing subscription-manager again
-sudo subscription-manager refresh
-
-# Cleaning up yum data
-sudo yum clean all
-
-# Checking for updates with yum
-sudo yum check-update
+# Clean up by removing the temporary file
+rm "$output_file"
 
 # Note: Replace "PLACEHOLDER" with your actual values for organization, activation key, and repository.
