@@ -1,24 +1,78 @@
 #!/bin/bash
 
+# Function to execute a command and capture its output
+execute_command() {
+    echo -e "\nCommand: $1"
+    eval $1
+}
+
+# Obtain the OS version and architecture
+os_version=$(grep -oP '(?<=^VERSION_ID=").+(?=")' /etc/os-release)
+architecture=$(uname -m)
+
+# Set variables based on the OS version and architecture
+if [[ "$os_version" == "6" ]]; then
+    if [[ "$architecture" == "x86_64" ]]; then
+        org="OrgForVersion6_x86_64"
+        activationkey="KeyForVersion6_x86_64"
+        repos=("Repo1ForVersion6_x86_64" "Repo2ForVersion6_x86_64")
+    elif [[ "$architecture" == "ppc64le" ]]; then
+        org="OrgForVersion6_ppc64le"
+        activationkey="KeyForVersion6_ppc64le"
+        repos=("Repo1ForVersion6_ppc64le" "Repo2ForVersion6_ppc64le")
+    fi
+elif [[ "$os_version" == "7" ]]; then
+    if [[ "$architecture" == "x86_64" ]]; then
+        org="OrgForVersion7_x86_64"
+        activationkey="KeyForVersion7_x86_64"
+        repos=("Repo1ForVersion7_x86_64" "Repo2ForVersion7_x86_64")
+    elif [[ "$architecture" == "ppc64le" ]]; then
+        org="OrgForVersion7_ppc64le"
+        activationkey="KeyForVersion7_ppc64le"
+        repos=("Repo1ForVersion7_ppc64le" "Repo2ForVersion7_ppc64le")
+    fi
+elif [[ "$os_version" == "8" ]]; then
+    if [[ "$architecture" == "x86_64" ]]; then
+        org="OrgForVersion8_x86_64"
+        activationkey="KeyForVersion8_x86_64"
+        repos=("Repo1ForVersion8_x86_64" "Repo2ForVersion8_x86_64")
+    elif [[ "$architecture" == "ppc64le" ]]; then
+        org="OrgForVersion8_ppc64le"
+        activationkey="KeyForVersion8_ppc64le"
+        repos=("Repo1ForVersion8_ppc64le" "Repo2ForVersion8_ppc64le")
+    fi
+else
+    echo "Unsupported OS version: $os_version"
+    exit 1
+fi
+
 # Create a temporary file to capture output
 output_file=$(mktemp)
 
-# Function to execute a command and capture its output
-execute_command() {
-    echo -e "\nCommand: $1" >> "$output_file"
-    eval $1 >> "$output_file" 2>&1
-}
+# Execute each command, capturing output to the temporary file
+{
+    execute_command "subscription-manager remove --all"
+    execute_command "subscription-manager unregister"
+    execute_command "subscription-manager clean"
+    execute_command "subscription-manager register --name=\"$(hostname -f)\" --org=\"$org\" --activationkey=\"$activationkey\" --force"
+    execute_command "subscription-manager refresh"
+    for repo in "${repos[@]}"; do
+        execute_command "subscription-manager repos --enable=\"$repo\""
+    done
+    execute_command "subscription-manager refresh"
+    execute_command "yum clean all"
+} >> "$output_file" 2>&1
 
-# Execute each command
-execute_command "sudo subscription-manager remove --all"
-execute_command "sudo subscription-manager unregister"
-execute_command "sudo subscription-manager clean"
-execute_command "sudo subscription-manager register --name=\"$(hostname -f)\" --org=\"PLACEHOLDER\" --activationkey=\"PLACEHOLDER\" --force"
-execute_command "sudo subscription-manager refresh"
-execute_command "sudo subscription-manager repos --enable=\"PLACEHOLDER\""
-execute_command "sudo subscription-manager refresh"
-execute_command "sudo yum clean all"
-execute_command "sudo yum check-update"
+# Handle the yum check-update command separately to format the output as desired
+echo -e "\nCommand: yum check-update" >> "$output_file"
+yum_output=$(yum check-update)
+package_count=$(echo "$yum_output" | grep -E '^.+\.x86_64|noarch' | wc -l)
+if [[ $package_count -gt 3 ]]; then
+    echo "$yum_output" | grep -E '^.+\.x86_64|noarch' | head -n 3 >> "$output_file"
+    echo "And $(($package_count - 3)) more packages." >> "$output_file"
+else
+    echo "$yum_output" | grep -E '^.+\.x86_64|noarch' >> "$output_file"
+fi
 
 # Display the captured output
 cat "$output_file"
