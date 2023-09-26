@@ -108,3 +108,5 @@ cat "$output_file"
 
 # Clean up by removing the temporary file
 rm "$output_file"
+
+pssh.sh -f hostlist.txt sh -c 'if [ "$(cat /etc/redhat-release | grep -oE "[0-9]" | head -1)" = "8" ]; then current_release=$(subscription-manager release --show | awk '\''/Release:/{print $2}'\''); if [ "$current_release" != "8.6" ]; then subscription-manager release --set=8.6; fi; fi'
