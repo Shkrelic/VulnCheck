@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to get subscription manager info
+get_subscription_info() {
+    if command_exists subscription-manager; then
+        echo "Subscription Info:"
+        echo "--------------------"
+        echo "Activation Key: $(subscription-manager identity | grep 'system identity' | awk '{print $3}')"
+        echo "Capsule Server: $(subscription-manager config --list | grep 'server.hostname' | awk '{print $3}')"
+        echo "Enabled Repositories: $(subscription-manager repos --list-enabled | awk '/Repo ID:/{print $3}')"
+        echo "Subscription Manager Errors: $(subscription-manager status | grep 'Overall Status:' | awk '{print $3}')"
+    else
+        echo "subscription-manager command not found."
+    fi
+}
+
+# Checking for pending updates
+pending_updates=$(yum updateinfo list security 2>/dev/null | grep RHSA | wc -l)
+critical_updates=$(yum updateinfo list security 2>/dev/null | grep 'Critical/Sec' | wc -l)
+
+# Checking for uptime, kernel version
+if command_exists uptime; then
+    uptime_info=$(uptime -p 2>/dev/null || uptime | awk -F', load average' '{print $1}')
+else
+    uptime_info="uptime command not found."
+fi
+
+kernel_version=$(uname -r)
+
+echo "Server Report"
+echo "======================"
+echo "Uptime: $uptime_info"
+echo "Kernel Version: $kernel_version"
+echo "Pending Security Updates: $pending_updates"
+echo "Critical Security Updates: $critical_updates"
+echo ""
+
+# Get subscription info if requested
+if [[ $1 == "--subscription-info" ]]; then
+    get_subscription_info
+fi
