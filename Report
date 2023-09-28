@@ -5,51 +5,57 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to execute a command with a timeout
+execute_with_timeout() {
+    local cmd="$1"
+    local timeout="$2"
+    local output
+    output=$(timeout "$timeout" bash -c "$cmd" 2>&1)
+    local status=$?
+    if [[ $status -eq 124 ]]; then
+        errors+="\nError: Command '$cmd' timed out after $timeout seconds.\n"
+    elif [[ $status -ne 0 ]]; then
+        errors+="\nError: Command '$cmd' failed with error code $status. Output: $output\n"
+    fi
+    echo "$output"
+}
+
 # Initialize variables
 report=""
 errors=""
+yum_errors=""
+
+# Checking for pending and critical updates, and yum history
+yum_output=$(execute_with_timeout "yum updateinfo list security; yum history" 60)
+
+pending_updates=$(echo "$yum_output" | grep RHSA | wc -l)
+critical_updates=$(echo "$yum_output" | grep 'Critical/Sec' | awk '{print $3 " " $2}')
+yum_history_header=$(echo "$yum_output" | grep -A3 'ID \|' | head -3)
+yum_history_updates=$(echo "$yum_output" | grep -E 'Update|Upgrade')
+
+# Checking for uptime, kernel version
+uptime_info=$(execute_with_timeout "uptime -p || uptime | awk -F', load average' '{print $1}'" 60)
+kernel_version=$(execute_with_timeout "uname -r" 60)
 
 # Function to get subscription manager info
 get_subscription_info() {
-    if command_exists subscription-manager; then
-        # Extracting environment name from subscription-manager identity
-        environment_name=$(subscription-manager identity | grep 'environment' | awk -F': ' '{print $2}')
-        
-        # Extracting Capsule Server from subscription-manager config --list output
-        capsule_server=$(subscription-manager config --list | grep -E 'baseurl\s+=|hostname\s+=' | awk -F'= ' '{print $2}')
-        
-        # Extracting Enabled Repositories and Subscription Manager Errors
-        enabled_repos=$(subscription-manager repos --list-enabled | awk '/Repo ID:/{print $3}')
-        sm_errors=$(subscription-manager status | grep 'Overall Status:' | awk '{print $3}')
-        
-        # Compile subscription info
-        report+="\nSubscription Info:\n"
-        report+="--------------------\n"
-        report+="Environment Name: $environment_name\n"
-        report+="Capsule Server: $capsule_server\n"
-        report+="Enabled Repositories: $enabled_repos\n"
-        report+="Subscription Manager Errors: $sm_errors\n"
-    else
-        errors+="\nError: subscription-manager command not found.\n"
-    fi
+    local sub_output
+    sub_output=$(execute_with_timeout "subscription-manager identity; subscription-manager config --list; subscription-manager repos --list-enabled; subscription-manager status" 60)
+    
+    # Extracting values
+    environment_name=$(echo "$sub_output" | grep 'environment' | awk -F': ' '{print $2}')
+    capsule_server=$(echo "$sub_output" | grep -E 'baseurl\s+=|hostname\s+=' | awk -F'= ' '{print $2}')
+    enabled_repos=$(echo "$sub_output" | awk '/Repo ID:/{print $3}')
+    sm_errors=$(echo "$sub_output" | grep 'Overall Status:' | awk '{print $3}')
+    
+    # Compile subscription info
+    report+="\nSubscription Info:\n"
+    report+="--------------------\n"
+    report+="Environment Name: $environment_name\n"
+    report+="Capsule Server: $capsule_server\n"
+    report+="Enabled Repositories: $enabled_repos\n"
+    report+="Subscription Manager Errors: $sm_errors\n"
 }
-
-# Checking for pending updates
-pending_updates=$(yum updateinfo list security 2>&1 | grep RHSA | wc -l)
-critical_updates=$(yum updateinfo list security 2>&1 | grep 'Critical/Sec' | awk '{print $3 " " $2}')
-
-# Checking for uptime, kernel version
-if command_exists uptime; then
-    uptime_info=$(uptime -p 2>/dev/null || uptime | awk -F', load average' '{print $1}')
-else
-    errors+="\nError: uptime command not found.\n"
-fi
-
-kernel_version=$(uname -r 2>&1)
-
-# Checking yum history for update transactions
-yum_history_header=$(yum history | head -3)
-yum_history_updates=$(yum history | grep 'Update')
 
 # Compile server info
 report+="\nServer Report\n"
@@ -60,7 +66,7 @@ report+="Pending Security Updates: $pending_updates\n"
 report+="Critical Security Updates: $critical_updates\n"
 
 # Compile yum history info
-report+="\nYUM History (Updates):\n"
+report+="\nYUM History (Updates/Upgrades):\n"
 report+="--------------------\n"
 report+="$yum_history_header\n$yum_history_updates\n"
 
