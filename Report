@@ -26,12 +26,27 @@ errors=""
 yum_errors=""
 
 # Checking for pending and critical updates, and yum history
-yum_output=$(execute_with_timeout "yum updateinfo list security; yum history" 60)
+yum_output=$(execute_with_timeout "yum -q updateinfo list security; yum -q history" 60)
 
-pending_updates=$(echo "$yum_output" | grep RHSA | wc -l)
-critical_updates=$(echo "$yum_output" | grep 'Critical/Sec' | awk '{print $3 " " $2}')
+# Parsing update info
+declare -A severity_count
+while read -r line; do
+    severity=$(echo "$line" | awk '{print $3}')
+    [[ -n $severity ]] && ((severity_count["$severity"]++))
+done <<< "$(echo "$yum_output" | grep -E 'Critical|Important|Moderate|Low')"
+
+update_summary=""
+for severity in "${!severity_count[@]}"; do
+    update_summary+="${severity_count[$severity]} $severity | "
+done
+update_summary=${update_summary%|*}
+
+# Parsing yum history
 yum_history_header=$(echo "$yum_output" | grep -A3 'ID \|' | head -3)
 yum_history_updates=$(echo "$yum_output" | grep -E 'Update|Upgrade')
+
+# Remove unwanted lines from yum_history_updates
+yum_history_updates=$(echo "$yum_history_updates" | grep -v -E 'Loaded plugins|update notice|is broken|bad duplicate')
 
 # Checking for uptime, kernel version
 uptime_info=$(execute_with_timeout "uptime -p || uptime | awk -F', load average' '{print $1}'" 60)
@@ -62,8 +77,7 @@ report+="\nServer Report\n"
 report+="======================\n"
 report+="Uptime: $uptime_info\n"
 report+="Kernel Version: $kernel_version\n"
-report+="Pending Security Updates: $pending_updates\n"
-report+="Critical Security Updates: $critical_updates\n"
+report+="Pending Security Updates: $update_summary\n"
 
 # Compile yum history info
 report+="\nYUM History (Updates/Upgrades):\n"
