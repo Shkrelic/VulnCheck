@@ -1,112 +1,77 @@
 #!/bin/bash
 
-# Function to execute a command and capture its output
-execute_command() {
-    echo -e "\nCommand: $1"
-    eval $1
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
 }
 
-# Obtain the OS version, architecture, and hostname
-os_version=$(grep -oP '(?<=^VERSION_ID=").+(?=")' /etc/os-release)
-architecture=$(uname -m)
-hostname=$(hostname -f)
+# Function to execute a command with a timeout
+execute_with_timeout() {
+    local cmd="$1"
+    local timeout="$2"
+    local output
+    output=$(timeout "$timeout" bash -c "$cmd" 2>&1)
+    local status=$?
+    if [[ $status -eq 124 ]]; then
+        errors+="\nError: Command '$cmd' timed out after $timeout seconds.\n"
+    elif [[ $status -ne 0 ]]; then
+        errors+="\nError: Command '$cmd' failed with error code $status. Output: $output\n"
+    fi
+    echo "$output"
+}
 
-# Determine the environment and set the activation key
-if [[ $hostname == *"prd"* ]] || [[ $hostname == *"dr"* ]]; then
-    environment="prod"
-else
-    environment="test"
-fi
+# Initialize variables
+report=""
+errors=""
+yum_errors=""
 
-# Construct a key selector based on the OS version, environment, and architecture
-key_selector="${environment}_${os_version}_${architecture}"
+# Checking for pending security updates
+sec_update_output=$(execute_with_timeout "yum -q updateinfo list security 2>/dev/null" 60)
+# Parsing update info
+declare -A severity_count
+while read -r line; do
+    severity=$(echo "$line" | awk '{print $2}')
+    [[ -n $severity ]] && ((severity_count["$severity"]++))
+done <<< "$(echo "$sec_update_output" | grep -E 'Critical|Important|Moderate|Low')"
 
-case "$key_selector" in
-    prod_7_x86_64)
-        activationkey="Prod7x86_64ActivationKey"
-        ;;
-    prod_7_ppc64le)
-        activationkey="Prod7ppc64leActivationKey"
-        ;;
-    prod_6_x86_64)
-        activationkey="Prod6x86_64ActivationKey"
-        ;;
-    prod_6_ppc64le)
-        activationkey="Prod6ppc64leActivationKey"
-        ;;
-    test_7_x86_64)
-        activationkey="Test7x86_64ActivationKey"
-        ;;
-    test_7_ppc64le)
-        activationkey="Test7ppc64leActivationKey"
-        ;;
-    test_6_x86_64)
-        activationkey="Test6x86_64ActivationKey"
-        ;;
-    test_6_ppc64le)
-        activationkey="Test6ppc64leActivationKey"
-        ;;
-    *)
-        echo "Unsupported OS version, environment or architecture."
-        exit 1
-        ;;
-esac
+update_summary="Total: $(echo "$sec_update_output" | wc -l) | "
+for severity in "${!severity_count[@]}"; do
+    update_summary+="${severity_count[$severity]} $severity | "
+done
+update_summary=${update_summary%|*}
+update_summary=$(echo -e "\e[1m$update_summary\e[0m")  # This makes the text bold
 
-# Set organization, and repositories based on OS version and architecture
-org="PLACEHOLDER"
-repo_selector="${os_version}_${architecture}"
+# Checking for yum history
+yum_history_output=$(execute_with_timeout "yum -q history 2>&1" 60)
+action_col_num=$(echo "$yum_history_output" | head -1 | awk -F' ' '{for(i=1;i<=NF;i++) if($i ~ /Action/){print i; exit}}')
+yum_history_header=$(echo "$yum_history_output" | grep -A3 'ID \|' | head -3)
+yum_history_updates=$(echo "$yum_history_output" | awk -v col="$action_col_num" '$col ~ /Update|Upgrade/')
 
-case "$repo_selector" in
-    7_x86_64)
-        repos=("repo1" "repo2" "repo3")
-        ;;
-    7_ppc64le)
-        repos=("repo4" "repo5" "repo6")
-        ;;
-    6_x86_64)
-        repos=("repo7" "repo8" "repo9")
-        ;;
-    6_ppc64le)
-        repos=("repo10" "repo11" "repo12")
-        ;;
-    *)
-        echo "Unsupported OS version or architecture."
-        exit 1
-        ;;
-esac
+# Checking for uptime, kernel version
+uptime_info=$(execute_with_timeout "uptime -p || uptime | awk -F', load average' '{print $1}'" 60)
+kernel_version=$(execute_with_timeout "uname -r" 60)
 
-# Create a temporary file to capture command output
-output_file=$(mktemp)
+# Function to get subscription manager info
+get_subscription_info() {
+    local sub_output
+    sub_output=$(execute_with_timeout "subscription-manager identity; subscription-manager config --list; subscription-manager repos --list-enabled 2>&1" 60)
+    local activation_key=$(echo "$sub_output" | grep -E "environment name:" | awk -F': ' '{print $2}')
+    local capsule_server=$(echo "$sub_output" | grep -E "baseurl|hostname" | awk -F': ' '{print $2}' | head -1)
+    local enabled_repos=$(echo "$sub_output" | grep -E "Repo ID:" | awk -F': ' '{print $2}')
+    local sub_errors=$(echo "$sub_output" | grep -E "Error:")
+    echo -e "Activation Key: $activation_key\nCapsule Server: $capsule_server\nEnabled Repos: $enabled_repos\nSubscription Manager Errors: $sub_errors"
+}
 
-# Execute each command, capturing output to the temporary file
-{
-    execute_command "subscription-manager remove --all"
-    execute_command "subscription-manager unregister"
-    execute_command "subscription-manager clean"
-    execute_command "subscription-manager register --name=\"$hostname\" --org=\"$org\" --activationkey=\"$activationkey\" --force"
-    execute_command "subscription-manager refresh"
-    for repo in "${repos[@]}"; do
-        execute_command "subscription-manager repos --enable=\"$repo\""
-    done
-    execute_command "subscription-manager refresh"
-    execute_command "yum clean all"
-} >> "$output_file" 2>&1
+sub_info=$(get_subscription_info)
 
-# Handle the yum check-update command separately to format the output as desired
-echo -e "\nCommand: yum check-update" >> "$output_file"
-yum_output=$(yum check-update)
-package_count=$(echo "$yum_output" | grep -E '^.+\.x86_64|noarch' | wc -l)
-if [[ $package_count -gt 3 ]]; then
-    echo "$yum_output" | grep -E '^.+\.x86_64|noarch' | head -n 3 >> "$output_file"
-    echo "And $(($package_count - 3)) more packages." >> "$output_file"
-else
-    echo "$yum_output" | grep -E '^.+\.x86_64|noarch' >> "$output_file"
-fi
+# Compiling report
+report+="Hostname: $(hostname)\n"
+report+="Uptime: $uptime_info\n"
+report+="Kernel Version: $kernel_version\n"
+report+="Pending Security Updates: $update_summary\n"
+report+="\n$yum_history_header\n$yum_history_updates\n"
+report+="\nSubscription Manager Info:\n$sub_info\n"
+report+="\nErrors (if any):\n$errors"
 
-# Display the captured output
-cat "$output_file"
-
-# Clean up by removing the temporary file
-rm "$output_file"
-
-pssh.sh -f hostlist.txt sh -c 'if [ "$(cat /etc/redhat-release | grep -oE "[0-9]" | head -1)" = "8" ]; then current_release=$(subscription-manager release --show | awk '\''/Release:/{print $2}'\''); if [ "$current_release" != "8.6" ]; then subscription-manager release --set=8.6; fi; fi'
+# Output the report
+echo -e "$report"
