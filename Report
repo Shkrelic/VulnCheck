@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Function to check if command exists
+# Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
@@ -25,15 +25,14 @@ report=""
 errors=""
 yum_errors=""
 
-# Checking for pending and critical updates, and yum history
-yum_output=$(execute_with_timeout "yum -q updateinfo list security; yum -q history" 60)
-
+# Checking for pending security updates
+sec_update_output=$(execute_with_timeout "yum -q updateinfo list security 2>/dev/null" 60)
 # Parsing update info
 declare -A severity_count
 while read -r line; do
     severity=$(echo "$line" | awk '{print $3}')
     [[ -n $severity ]] && ((severity_count["$severity"]++))
-done <<< "$(echo "$yum_output" | grep -E 'Critical|Important|Moderate|Low')"
+done <<< "$(echo "$sec_update_output" | grep -E 'Critical|Important|Moderate|Low')"
 
 update_summary=""
 for severity in "${!severity_count[@]}"; do
@@ -41,12 +40,10 @@ for severity in "${!severity_count[@]}"; do
 done
 update_summary=${update_summary%|*}
 
-# Parsing yum history
-yum_history_header=$(echo "$yum_output" | grep -A3 'ID \|' | head -3)
-yum_history_updates=$(echo "$yum_output" | grep -E 'Update|Upgrade')
-
-# Remove unwanted lines from yum_history_updates
-yum_history_updates=$(echo "$yum_history_updates" | grep -v -E 'Loaded plugins|update notice|is broken|bad duplicate')
+# Checking for yum history
+yum_history_output=$(execute_with_timeout "yum -q history 2>&1" 60)
+yum_history_header=$(echo "$yum_history_output" | grep -A3 'ID \|' | head -3)
+yum_history_updates=$(echo "$yum_history_output" | grep -E 'Update|Upgrade')
 
 # Checking for uptime, kernel version
 uptime_info=$(execute_with_timeout "uptime -p || uptime | awk -F', load average' '{print $1}'" 60)
