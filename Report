@@ -34,18 +34,15 @@ while read -r line; do
     [[ -n $severity ]] && ((severity_count["$severity"]++))
 done <<< "$(echo "$sec_update_output" | grep -E 'Critical|Important|Moderate|Low')"
 
-update_summary="Total: $(echo "$sec_update_output" | wc -l) | "
-for severity in "${!severity_count[@]}"; do
-    update_summary+="${severity_count[$severity]} $severity | "
-done
-update_summary=${update_summary%|*}
+update_summary="${severity_count[Critical]} Crit | ${severity_count[Important]} Important | "
+update_summary+="$(echo "$sec_update_output" | wc -l) total"
 update_summary=$(echo -e "\e[1m$update_summary\e[0m")  # This makes the text bold
 
 # Checking for yum history
 yum_history_output=$(execute_with_timeout "yum -q history 2>&1" 60)
-action_col_num=$(echo "$yum_history_output" | head -1 | awk -F' ' '{for(i=1;i<=NF;i++) if($i ~ /Action/){print i; exit}}')
+action_col_num=$(echo "$yum_history_output" | head -1 | awk -F'|' '{for(i=1;i<=NF;i++) if($i ~ /Action/){print i; exit}}')
 yum_history_header=$(echo "$yum_history_output" | grep -A3 'ID \|' | head -3)
-yum_history_updates=$(echo "$yum_history_output" | awk -v col="$action_col_num" '$col ~ /Update|Upgrade/')
+yum_history_updates=$(echo "$yum_history_output" | awk -v col="$action_col_num" -F'|' '$col ~ /Update|Upgrade/')
 
 # Checking for uptime, kernel version
 uptime_info=$(execute_with_timeout "uptime -p || uptime | awk -F', load average' '{print $1}'" 60)
