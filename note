@@ -1,77 +1,28 @@
 #!/bin/bash
 
-# Function to check if a command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
+# Define log file
+LOGFILE="/path/to/your/logfile.log"
+
+# Function to catch the SIGTERM signal (when you close the session)
+term_handler() {
+  echo "Session closed at $(date)" >> "$LOGFILE"
 }
 
-# Function to execute a command with a timeout
-execute_with_timeout() {
-    local cmd="$1"
-    local timeout="$2"
-    local output
-    output=$(timeout "$timeout" bash -c "$cmd" 2>&1)
-    local status=$?
-    if [[ $status -eq 124 ]]; then
-        errors+="\nError: Command '$cmd' timed out after $timeout seconds.\n"
-    elif [[ $status -ne 0 ]]; then
-        errors+="\nError: Command '$cmd' failed with error code $status. Output: $output\n"
-    fi
-    echo "$output"
+# Function to catch the script exit
+exit_handler() {
+  echo "Script finished at $(date)" >> "$LOGFILE"
 }
 
-# Initialize variables
-report=""
-errors=""
-yum_errors=""
+# Trap SIGTERM signal (when session closes) and EXIT (script ends)
+trap 'term_handler' SIGTERM
+trap 'exit_handler' EXIT
 
-# Checking for pending security updates
-sec_update_output=$(execute_with_timeout "yum -q updateinfo list security 2>/dev/null" 60)
-# Parsing update info
-declare -A severity_count
-while read -r line; do
-    severity=$(echo "$line" | awk '{print $2}')
-    [[ -n $severity ]] && ((severity_count["$severity"]++))
-done <<< "$(echo "$sec_update_output" | grep -E 'Critical|Important|Moderate|Low')"
+# Log start time
+echo "Script started at $(date)" >> "$LOGFILE"
 
-update_summary="Total: $(echo "$sec_update_output" | wc -l) | "
-for severity in "${!severity_count[@]}"; do
-    update_summary+="${severity_count[$severity]} $severity | "
+# Example loop to show script is running
+while true
+do
+  echo "Script is still running at $(date)" >> "$LOGFILE"
+  sleep 60
 done
-update_summary=${update_summary%|*}
-update_summary=$(echo -e "\e[1m$update_summary\e[0m")  # This makes the text bold
-
-# Checking for yum history
-yum_history_output=$(execute_with_timeout "yum -q history 2>&1" 60)
-action_col_num=$(echo "$yum_history_output" | head -1 | awk -F' ' '{for(i=1;i<=NF;i++) if($i ~ /Action/){print i; exit}}')
-yum_history_header=$(echo "$yum_history_output" | grep -A3 'ID \|' | head -3)
-yum_history_updates=$(echo "$yum_history_output" | awk -v col="$action_col_num" '$col ~ /Update|Upgrade/')
-
-# Checking for uptime, kernel version
-uptime_info=$(execute_with_timeout "uptime -p || uptime | awk -F', load average' '{print $1}'" 60)
-kernel_version=$(execute_with_timeout "uname -r" 60)
-
-# Function to get subscription manager info
-get_subscription_info() {
-    local sub_output
-    sub_output=$(execute_with_timeout "subscription-manager identity; subscription-manager config --list; subscription-manager repos --list-enabled 2>&1" 60)
-    local activation_key=$(echo "$sub_output" | grep -E "environment name:" | awk -F': ' '{print $2}')
-    local capsule_server=$(echo "$sub_output" | grep -E "baseurl|hostname" | awk -F': ' '{print $2}' | head -1)
-    local enabled_repos=$(echo "$sub_output" | grep -E "Repo ID:" | awk -F': ' '{print $2}')
-    local sub_errors=$(echo "$sub_output" | grep -E "Error:")
-    echo -e "Activation Key: $activation_key\nCapsule Server: $capsule_server\nEnabled Repos: $enabled_repos\nSubscription Manager Errors: $sub_errors"
-}
-
-sub_info=$(get_subscription_info)
-
-# Compiling report
-report+="Hostname: $(hostname)\n"
-report+="Uptime: $uptime_info\n"
-report+="Kernel Version: $kernel_version\n"
-report+="Pending Security Updates: $update_summary\n"
-report+="\n$yum_history_header\n$yum_history_updates\n"
-report+="\nSubscription Manager Info:\n$sub_info\n"
-report+="\nErrors (if any):\n$errors"
-
-# Output the report
-echo -e "$report"
