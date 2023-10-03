@@ -1,25 +1,51 @@
 #!/bin/bash
 
-# Define the log file and its path
 LOGFILE=~/script_log.txt
-
-# Get the Process ID (PID) and execution location
 PID=$$
 EXECUTION_PATH=$(pwd)
 
-# Output PID and execution path to terminal and log file
-echo "Script is starting. PID: $PID, Executed from: $EXECUTION_PATH" | tee -a "$LOGFILE"
+# Function to log exit reasons
+on_exit() {
+    REASON=$?
+    if [[ $REASON == 0 ]]; then
+        echo "Script ENDED normally at $(date)" | tee -a "$LOGFILE"
+    elif [[ $REASON == 137 ]]; then 
+        echo "Script was KILLED externally at $(date)" | tee -a "$LOGFILE"
+    else
+        echo "Script ENDED abnormally with exit code $REASON at $(date)" | tee -a "$LOGFILE"
+    fi
+}
 
-# Start a background task to kill this script after 5 minutes (300 seconds)
+# Trapping various signals and exit for logging
+trap on_exit EXIT HUP INT QUIT TERM
+
+# Loop that logs a message continuously in the background
+{
+    while true
+    do
+        echo "Script is still running at $(date) with PID $PID, Executed from: $EXECUTION_PATH" | tee -a "$LOGFILE"
+        sleep 1 
+    done
+} &
+
+# Capturing the background loop's PID
+LOOP_PID=$!
+
+# Auto kill logic (will execute in the background)
 {
     sleep 300
     kill -9 $PID
-    echo "Script $PID was automatically terminated after 5 minutes" >> "$LOGFILE"
+    kill -9 $LOOP_PID
 } &
 
-# A loop that repeatedly logs a message until the script is terminated
+# Capturing the auto-kill's PID
+AUTO_KILL_PID=$!
+
+# Logging the PIDs
+echo "Script STARTED. PID: $PID, Logging loop PID: $LOOP_PID, Auto-kill PID: $AUTO_KILL_PID, Executed from: $EXECUTION_PATH at $(date)" | tee -a "$LOGFILE"
+
+# Infinite loop to keep the main script running
 while true
 do
-    echo "Script is still running at $(date) with PID $PID, Executed from: $EXECUTION_PATH" | tee -a "$LOGFILE"
-    sleep 1 # Delay to make it readable and prevent too quick writes
+    sleep 10
 done
