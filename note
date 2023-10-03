@@ -1,28 +1,25 @@
 #!/bin/bash
 
-# Define log file
-LOGFILE="/path/to/your/logfile.log"
+# Define the log file and its path
+LOGFILE=~/script_log.txt
 
-# Function to catch the SIGTERM signal (when you close the session)
-term_handler() {
-  echo "Session closed at $(date)" >> "$LOGFILE"
-}
+# Get the Process ID (PID) and execution location
+PID=$$
+EXECUTION_PATH=$(pwd)
 
-# Function to catch the script exit
-exit_handler() {
-  echo "Script finished at $(date)" >> "$LOGFILE"
-}
+# Output PID and execution path to terminal and log file
+echo "Script is starting. PID: $PID, Executed from: $EXECUTION_PATH" | tee -a "$LOGFILE"
 
-# Trap SIGTERM signal (when session closes) and EXIT (script ends)
-trap 'term_handler' SIGTERM
-trap 'exit_handler' EXIT
+# Start a background task to kill this script after 5 minutes (300 seconds)
+{
+    sleep 300
+    kill -9 $PID
+    echo "Script $PID was automatically terminated after 5 minutes" >> "$LOGFILE"
+} &
 
-# Log start time
-echo "Script started at $(date)" >> "$LOGFILE"
-
-# Example loop to show script is running
+# A loop that repeatedly logs a message until the script is terminated
 while true
 do
-  echo "Script is still running at $(date)" >> "$LOGFILE"
-  sleep 60
+    echo "Script is still running at $(date) with PID $PID, Executed from: $EXECUTION_PATH" | tee -a "$LOGFILE"
+    sleep 1 # Delay to make it readable and prevent too quick writes
 done
